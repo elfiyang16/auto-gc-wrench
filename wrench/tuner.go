@@ -6,16 +6,18 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync/atomic"
+
+	atomic2 "go.uber.org/atomic"
 )
 
 var (
 	maxGCPercent     uint32 = 500
 	minGCPercent     uint32 = 50 // 100?
- 	defaultGCPercent uint32 = 100
+	defaultGCPercent uint32 = 100
 )
 
 func init() {
-	gogc, err := strconv.ParseInt(os.Getenv("GOGC"), 10, 32))
+	gogc, err := strconv.ParseInt(os.Getenv("GOGC"), 10, 32)
 	if err != nil {
 		return
 	}
@@ -25,7 +27,7 @@ func init() {
 // Tuning sets the threshold of live heap target which will be respected by gc tuner.
 // When Tuning, the env GOGC will not be take effect.
 // threshold: disable tuning if threshold == 0
-func Tuning(threshold uint64){
+func Tuning(threshold uint64) {
 	if threshold <= 0 && globalTuner != nil {
 		globalTuner.stop()
 		globalTuner = nil
@@ -62,12 +64,13 @@ func SetMinGCPercent(n uint32) uint32 {
 	return atomic.SwapUint32(&minGCPercent, n)
 }
 
-
 // only one tuner / process
 var globalTuner *tuner = nil
 
-/* Heap
- _______________  => limit: host/cgroup memory hard limit
+/*
+	Heap
+	_______________  => limit: host/cgroup memory hard limit
+
 |               |
 |---------------| => threshold: increase GCPercent when gc_trigger < threshold
 |               |
@@ -81,11 +84,11 @@ So we can change GCPercent dynamically to tuning GC performance.
 */
 type tuner struct {
 	finalizer *finalizer
-	gcPercent atomic.Uint32
-	threshold atomic.Uint64 // high water level, in bytes
+	gcPercent atomic2.Uint32
+	threshold atomic2.Uint64 // high water level, in bytes
 }
 
-func newTuner(threshold uint64)*tuner{
+func newTuner(threshold uint64) *tuner {
 	t := &tuner{}
 	t.gcPercent.Store(defaultGCPercent)
 	t.threshold.Store(threshold)
@@ -95,7 +98,7 @@ func newTuner(threshold uint64)*tuner{
 
 // tuning is the callback passed to finalizer of the tuner object ptr.
 // It reads heap in use, and the set threshold, and dynamically set the GC percentage based on calculated target.
-func (t *tuner) tuning (){
+func (t *tuner) tuning() {
 	inUse := readMemoryInuse()
 	threshold := t.getThreshold()
 	// invalid threshold, bypass gc tunning
@@ -106,20 +109,19 @@ func (t *tuner) tuning (){
 	return
 }
 
-
 func (t *tuner) stop() {
 	t.finalizer.stop()
 }
 
-func (t *tuner) setThreshold (threshold uint64){
+func (t *tuner) setThreshold(threshold uint64) {
 	t.threshold.Store(threshold)
 }
 
-func (t *tuner) getThreshold ()uint64{
+func (t *tuner) getThreshold() uint64 {
 	return t.threshold.Load()
 }
 
-func (t *tuner) setGCPercent(percentage uint32) uint32{
+func (t *tuner) setGCPercent(percentage uint32) uint32 {
 	t.gcPercent.Store(percentage)
 	return uint32(debug.SetGCPercent(int(percentage)))
 }
@@ -134,6 +136,10 @@ func (t *tuner) getGCPercent() uint32 {
 // if threshold <= inUse*2, so gcPercent <= 100, and GC positively to avoid OOM
 // if threshold > inUse*2, so gcPercent > 100, and GC negatively to reduce GC times
 func calcGCPercent(inUse, threshold uint64) uint32 {
+	// 0. if GOMEMLIMIT <= heap in use then use the default GC Percent
+	if debug.SetMemoryLimit(-1) <= inUse {
+		return defaultGCPercent
+	}
 	if inUse == 0 || threshold == 0 { // 1. invalid -> default
 		return defaultGCPercent
 	}
@@ -141,12 +147,11 @@ func calcGCPercent(inUse, threshold uint64) uint32 {
 		return minGCPercent
 	}
 	// 3. calc ideal gcPercent within [lowerBound, upperBound]
-	gcPercent := uint32(math.Floor(float64(threshold-inUse)/float64(inUse)*100))
+	gcPercent := uint32(math.Floor(float64(threshold-inUse) / float64(inUse) * 100))
 	if gcPercent < minGCPercent {
 		return minGCPercent
-	} else if gcPercent > maxGCPercent{
+	} else if gcPercent > maxGCPercent {
 		return maxGCPercent
 	}
 	return gcPercent
 }
-
