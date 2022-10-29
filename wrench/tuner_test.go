@@ -4,14 +4,12 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 var testHeap []byte
 
 func TestTuner(t *testing.T) {
-	is := assert.New(t)
 	memLimit := uint64(100 * 1024 * 1024) //100 MB
 	threshold := memLimit / 2
 	turner := newTuner(threshold)
