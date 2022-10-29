@@ -10,8 +10,8 @@ import (
 
 var (
 	maxGCPercent     uint32 = 500
-	minGCPercent     uint32 = 50
-	defaultGCPercent uint32 = 100
+	minGCPercent     uint32 = 50 // 100?
+ 	defaultGCPercent uint32 = 100
 )
 
 func init() {
@@ -81,15 +81,14 @@ So we can change GCPercent dynamically to tuning GC performance.
 */
 type tuner struct {
 	finalizer *finalizer
-	gcPercent uint32
-	threshold uint64 // high water level, in bytes
+	gcPercent atomic.Uint32
+	threshold atomic.Uint64 // high water level, in bytes
 }
 
 func newTuner(threshold uint64)*tuner{
-	t := &tuner{
-		gcPercent: defaultGCPercent,
-		threshold: threshold,
-	}
+	t := &tuner{}
+	t.gcPercent.Store(defaultGCPercent)
+	t.threshold.Store(threshold)
 	t.finalizer = newFinalizer(t.tuning)
 	return t
 }
@@ -113,20 +112,20 @@ func (t *tuner) stop() {
 }
 
 func (t *tuner) setThreshold (threshold uint64){
-	atomic.StoreUint64(&t.threshold, threshold)
+	t.threshold.Store(threshold)
 }
 
 func (t *tuner) getThreshold ()uint64{
-	atomic.LoadUint64(&t.threshold)
+	return t.threshold.Load()
 }
 
 func (t *tuner) setGCPercent(percentage uint32) uint32{
-	atomic.StoreUint32(&t.gcPercent, percentage)
+	t.gcPercent.Store(percentage)
 	return uint32(debug.SetGCPercent(int(percentage)))
 }
 
 func (t *tuner) getGCPercent() uint32 {
-	return atomic.LoadUint32(&t.gcPercent)
+	return t.gcPercent.Load()
 }
 
 // inUse -> heapLive

@@ -1,8 +1,8 @@
 package wrench
 
 import (
+	"go.uber.org/atomic"
 	"runtime"
-	"sync/atomic"
 )
 
 type finalizerCallback func()
@@ -14,11 +14,11 @@ type finalizerRef struct {
 type finalizer struct {
 	ref      *finalizerRef
 	callback finalizerCallback
-	stopped  int32
+	stopped  atomic.Int32
 }
 
 func finalizerHandler(f *finalizerRef) {
-	if atomic.LoadInt32(&f.parent.stopped) > 0 {
+	if f.parent.stopped.Load() > 0 {
 		return
 	}
 	f.parent.callback()
@@ -40,5 +40,5 @@ func newFinalizer(callback finalizerCallback) *finalizer {
 }
 
 func (f *finalizer) stop() {
-	atomic.StoreInt32(&f.stopped, 1)
+	f.stopped.Store(1)
 }
